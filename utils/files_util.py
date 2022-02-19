@@ -25,4 +25,3 @@ def iterate_file_rows(file_name):
     with open(file_name, 'r') as data_file:
         for row in data_file:
             yield row
-

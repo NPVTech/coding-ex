@@ -27,7 +27,7 @@ def part_two():
     company_parser = CompanyParser()
     for company in parse_json_file('companies.json', company_parser):
         companies[company.id] = company
-    
+
     opportunity_parser = OpportunityParser()
     for opportunity in parse_json_file('opportunities.json', opportunity_parser):
         opportunities[opportunity.id] = opportunity
