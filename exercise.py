@@ -1,117 +1,123 @@
 import csv
-import json
-import urllib.request
 
-from dataclasses import dataclass
-from enum import Enum
+from collections import defaultdict
 
-
-class OpportunityStatus(Enum):
-    PENDING = 'pending'
-    ACTIVE = 'active'
-    CLOSED = 'closed'
-
-
-class OpportunityType(Enum):
-    NEW_LOGO = 'new_logo'
-    EXPANSION = 'expansion'
-    OTHER = 'other'
-
-
-def _str_to_oportunity_type_enum(str_type):
-    return {
-        'new_logo': OpportunityType.NEW_LOGO,
-        'expansion': OpportunityType.EXPANSION,
-        'other': OpportunityType.OTHER,
-    }[str_type]
-
-
-def _str_to_oportunity_status_enum(str_status):
-    return {
-        'pending': OpportunityStatus.PENDING,
-        'active': OpportunityStatus.ACTIVE,
-        'closed': OpportunityStatus.CLOSED,
-    }[str_status]
-
-
-@dataclass
-class Company:
-    id: int
-    name: str
-    start_date: str
-    logo_image_url: str
-    employees: int
-    target_account: bool
-
-    def __post_init__(self):
-        # TODO: improve
-        self.target_account = self.target_account == 'Yes'
-
-
-def gen():
-    for x in range(55):
-        yield x
-
-
-@dataclass
-class Opportunity:
-    id: int
-    company_id: int
-    amount: int
-    type: OpportunityType
-    updated_at: str  # TODO: timestamp in ISO 8601 format
-    status: OpportunityStatus
-
-    def __post_init__(self):
-        # TODO: improve
-        self.type = _str_to_oportunity_type_enum(self.type)
-        self.status = _str_to_oportunity_status_enum(self.status)
+from models.company import TargetAccount
+from parsers.companies import CompanyParser
+from parsers.opportunities import OpportunityParser
+from utils.files_util import download_file, parse_json_file
 
 
 def part_one():
+    """
+    Download csv files and write them as json.
+    """
     download_file('https://pbryan.github.io/exercise/companies.csv', 'companies.json')
     download_file('https://pbryan.github.io/exercise/opportunities.csv', 'opportunities.json')
 
 
-def download_file(src_url, output_filename):
-    csv_file_path, _ = urllib.request.urlretrieve(src_url)
-
-    with open(csv_file_path, mode='r') as csv_file:
-        csv_reader = csv.DictReader(csv_file)
-
-        with open(output_filename, mode='w') as json_file:
-            for csv_row in csv_reader:
-                json_row = {k: v for k, v in csv_row.items() if not k.startswith('_')}
-                json.dump(json_row, json_file)
-                json_file.write('\n')
-
-
 def part_two():
+    """
+    Read all json objects into collections of Python objects in memory.
+    """
     companies = {}
-    for raw_company in _get_data_from_json_file('companies.json'):
-        company = Company(**raw_company)
-        companies[company.id] = company
-
     opportunities = {}
-    for raw_opportunity in _get_data_from_json_file('opportunities.json'):
-        opportunity = Opportunity(**raw_opportunity)
+    opportunities_by_company = defaultdict(list)
+
+    company_parser = CompanyParser()
+    for company in parse_json_file('companies.json', company_parser):
+        companies[company.id] = company
+    
+    opportunity_parser = OpportunityParser()
+    for opportunity in parse_json_file('opportunities.json', opportunity_parser):
         opportunities[opportunity.id] = opportunity
+        opportunities_by_company[opportunity.company_id].append(opportunity)
 
-    return companies, opportunities
-
-
-def part_three(companies, opportunities):
-    for company in companies:
-        pass
+    return companies, opportunities, opportunities_by_company
 
 
-def _get_data_from_json_file(file_name):
-    with open(file_name, 'r') as json_file:
-        rows = [json.loads(row) for row in json_file]
-    return rows
+def part_three(companies, opportunities_by_company):
+    """
+    From all data loaded into objects in memory, output a CSV file, containing:
+
+    - company name
+    - start date in mm/dd/yyyy format
+    - total amount of opportunities
+    - average opportunity amount
+    - date of last opportunity update in mm/dd/yyyy format
+    """
+    with open('company_report.csv', 'w') as report_file:
+        csv_writer = csv.writer(report_file, delimiter=',')
+        for company in companies.values():
+            company_opportunities = opportunities_by_company[company.id]
+
+            company_name = company.name
+            start_date = company.start_date
+            amount_of_opportunities = len(company_opportunities)
+            sum_opportunities_amount = sum(opportunity.amount for opportunity in company_opportunities)
+            average_amount = sum_opportunities_amount / amount_of_opportunities
+            last_opportunity_date = max(company_opportunities, key=lambda opportunity: opportunity.updated_at).updated_at
+
+            report_row = [
+                company_name,
+                start_date.strftime("%m/%d/%Y"),
+                amount_of_opportunities,
+                average_amount,
+                last_opportunity_date.strftime("%m/%d/%Y")
+            ]
+
+            csv_writer.writerow(report_row)
+
+
+def part_four(companies, opportunities_by_company):
+    """
+    From all data loaded into objects in memory, output a CSV file that summarizes for target accounts and non-target accounts:
+
+    - total opportunity amount
+    - average opportunity amount
+    """
+    target_account_opportunities_amount = 0
+    target_account_opportunities_amount_sum = 0
+
+    non_target_account_opportunities_amount = 0
+    non_target_account_opportunities_amount_sum = 0
+
+    for company in companies.values():
+        company_opportunities = opportunities_by_company[company.id]
+        opportunities_amount = sum(opportunity.amount for opportunity in company_opportunities)
+
+        if company.target_account == TargetAccount.YES:
+            target_account_opportunities_amount += 1
+            target_account_opportunities_amount_sum += opportunities_amount
+
+        else:
+            non_target_account_opportunities_amount += 1
+            non_target_account_opportunities_amount_sum += opportunities_amount
+
+    with open('summary_report.csv', 'w') as report_file:
+        target_account_row = [
+            'target_accounts',
+            target_account_opportunities_amount_sum,
+            target_account_opportunities_amount_sum / target_account_opportunities_amount,
+        ]
+
+        non_target_account_row = [
+            'non_target_accounts',
+            non_target_account_opportunities_amount_sum,
+            non_target_account_opportunities_amount_sum / non_target_account_opportunities_amount,
+        ]
+
+        report_rows = [
+            target_account_row,
+            non_target_account_row,
+        ]
+
+        csv_writer = csv.writer(report_file, delimiter=',')
+        csv_writer.writerows(report_rows)
 
 
 if __name__ == '__main__':
     part_one()
-    companies, opportunities = part_two()
-    part_three(companies, opportunities)
+    companies, opportunities, opportunities_by_company = part_two()
+    part_three(companies, opportunities_by_company)
+    part_four(companies, opportunities_by_company)
