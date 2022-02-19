@@ -6,17 +6,17 @@ from parsers.base import JSONParser
 
 class CompanyParser(JSONParser):
 
-    STR_TO_TARGET_MAP = {
-        'Yes': TargetAccount.YES,
-        'No': TargetAccount.NO,
+    FIELD_NAME_TO_PARSE_FUNCTION = {
+        'target_account': lambda value: TargetAccount[value.upper()],
+        'start_date': lambda value: datetime.strptime(value, "%Y-%m-%d").date()
     }
 
     def get_model_class(self):
         return Company
 
-    def parse_field(self, field_name, field_value):
-        if field_name == 'target_account':
-            return self.STR_TO_TARGET_MAP[field_value]
-        if field_name == 'start_date':
-            return datetime.strptime(field_value, "%Y-%m-%d").date()
-        return field_value
+    @property
+    def parse_field_function_map(self):
+        return {
+            'target_account': lambda value: TargetAccount[value.upper()],
+            'start_date': lambda value: datetime.strptime(value, "%Y-%m-%d").date()
+        }
